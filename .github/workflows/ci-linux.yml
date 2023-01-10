@@ -1,0 +1,92 @@
+name: ci-linux
+
+# Trigger the workflow on push or pull request
+on:
+  # pull_request:
+  #   branches: [master]
+  push:
+    paths:
+      - '.github/workflows/ci-linux.yml'
+      - 'stack.yaml'
+      - '*.cabal'
+      - 'app/**'
+      - 'src/**'
+      - 'test/**'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      STACK_FLAGS: "--flag accelerate:-debug"
+      GHC_VERSION: "9.0.2"
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: actions/checkout@v3
+        with:
+          repository: actions/cache
+          path: .github/actions/cache-always
+          ref: v3
+
+      # Tweak `action.yml` of `actions/cache@v3` to remove its `post-if`
+      # condition, making it default to `post-if: always()`.
+      - name: Set up actions/cache-always@v3
+        run: |
+          sed -i -e '/ post-if: /d' .github/actions/cache-always/action.yml
+
+      - name: actions/cache-always@v3
+        uses: ./.github/actions/cache-always
+        with:
+          path: snapshot.pkgdb
+          key: ${{ runner.os }}-snapshot.pkgdb
+
+      - name: actions/cache-always@v3
+        uses: ./.github/actions/cache-always
+        with:
+          path: |
+            ~/.local/bin
+            ~/.ghcup/ghc
+            ~/.stack/programs
+            ~/.stack/snapshots
+            .stack-work
+          key: ${{ runner.os }}-${{ hashFiles('stack.yaml') }}-${{ hashFiles('snapshot.pkgdb') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ hashFiles('stack.yaml') }}-${{ hashFiles('snapshot.pkgdb') }}
+            ${{ runner.os }}-${{ hashFiles('stack.yaml') }}-
+            ${{ runner.os }}-
+
+      - name: Install stack
+        run: |
+          mkdir -p ~/.local/bin
+          # if [[ ! -x ~/.local/bin/stack ]]; then
+          #   curl -sL https://get.haskellstack.org/stable/linux-x86_64.tar.gz | tar xz --wildcards --strip-components=1 -C ~/.local/bin '*/stack'
+          #   chmod a+x ~/.local/bin/stack
+          # fi
+          echo "~/.local/bin" >> $GITHUB_PATH
+
+      - name: Install GHC
+        run: ghcup install ghc --set $GHC_VERSION
+
+      - name: Install LLVM
+        run: sudo apt-get -y install llvm-12-dev
+
+      - name: Install dependencies
+        run: sudo apt-get -y install libffi7 libffi-dev freeglut3-dev libgmp-dev libfreetype6-dev libgtk-3-dev libglfw3-dev
+
+      - name: Build dependencies
+        run: stack build $STACK_FLAGS --only-dependencies --test --no-run-tests
+
+      - name: Build
+        run: stack install $STACK_FLAGS --test --no-run-tests
+
+      - name: Test
+        run: stack test $STACK_FLAGS
+
+      - name: Bench
+        run: quickhull --benchmark --random 100000 --seed 1234
+
+      - name: Save snapshot.pkgdb
+        if: always()
+        run: stack exec ghc-pkg -- --package-db=$(stack path --snapshot-pkg-db) list > snapshot.pkgdb
+

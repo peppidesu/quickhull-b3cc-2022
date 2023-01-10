@@ -1,0 +1,47 @@
+{
+    "name": "uu-b3cc/quickhull",
+
+    "build": {
+      "dockerfile": "Dockerfile"
+    },
+
+    "extensions": [
+      "haskell.haskell"
+    ],
+
+    "settings": {
+      "haskell.ghcupExecutablePath": "~/.ghcup/bin/ghcup",
+      "haskell.manageHLS": "GHCup",
+      "haskell.toolchain": {
+        "hls": "1.9.0.0",
+        "ghc": "9.0.2"
+      }
+    },
+
+    "remoteUser": "vscode",
+
+    "mounts": [
+      // Mount local ssh files
+      // "source=${localEnv:HOME}/.ssh,target=/home/vscode/.ssh,type=bind,consistency=cached",
+      // Mount build directories to volume to improve performance
+      // "source=home-ghcup,target=/home/vscode/.ghcup,type=volume",
+      // "source=home-stack,target=/home/vscode/.stack,type=volume",
+      // "source=home-cabal,target=/home/vscode/.cabal,type=volume",
+      // Avoid reinstalling extensions
+      // "source=vscode-extensions,target=/home/vscode/.vscode-server/extensions,type=volume",
+      // Configure WSLg display
+      // "source=/tmp/.X11-unix,target=/tmp/.X11-unix,type=bind",
+      // "source=/mnt/wslg,target=/mnt/wslg,type=bind"
+    ],
+
+    // "postCreateCommand": "sudo chown -R vscode:vscode /home/vscode",
+
+    // "containerEnv": {
+    //   // Configure WSLg display
+    //   "DISPLAY": ":0",
+    //   "WAYLAND_DISPLAY": "${localEnv:WAYLAND_DISPLAY}",
+    //   "XDG_RUNTIME_DIR": "${localEnv:XDG_RUNTIME_DIR}",
+    //   "PULSE_SERVER": "${localEnv:PULSE_SERVER}"
+    // }
+}
+
