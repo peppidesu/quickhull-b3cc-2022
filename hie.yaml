@@ -3,7 +3,7 @@ cradle:
     - path: "./src"
       component: "quickhull:lib"
     - path: "./app"
-      component: "quickhull:exe:quickull"
+      component: "quickhull:exe:quickhull"
     - path: "./test"
       component: "quickhull:test:quickhull-test"
 
