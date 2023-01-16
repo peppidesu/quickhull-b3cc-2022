@@ -25,7 +25,6 @@ module Quickhull (
 import Data.Array.Accelerate
 import Data.Array.Accelerate.Interpreter (run)
 import Data.Array.Accelerate.Smart
-import Data.Array.Accelerate.Sugar.Array (Array (Array))
 import Debug.Trace
 import qualified Prelude as P
 
@@ -108,7 +107,12 @@ initialPartition points =
     newPoints =
       let
         p1p2 :: Acc (Vector Point)
-        p1p2 = generate (I1 (3 + the countLower + the countUpper)) (\(I1 ix) -> if ix == 0 || ix == (2 + the countLower + the countUpper) then p1 else if ix == (the countUpper + 1) then p2 else undef)
+        p1p2 = generate (I1 (3 + the countLower + the countUpper)) 
+          (\(I1 ix) -> 
+            if ix == 0 || 
+               ix == (2 + the countLower + the countUpper) 
+                then p1
+            else if ix == (the countUpper + 1) then p2 else T2 0 0)
        in
         permute const p1p2 (destination !) points
 
@@ -138,7 +142,7 @@ shiftHeadFlagsL headFlags =
     f :: (Exp a, Exp a, Exp a) -> Exp a
     f (_, _, c) = c
    in
-    stencil f wrap headFlags
+    stencil f (function $ const True_) headFlags
 
 shiftHeadFlagsR :: Acc (Vector Bool) -> Acc (Vector Bool)
 shiftHeadFlagsR headFlags =
@@ -146,7 +150,7 @@ shiftHeadFlagsR headFlags =
     f :: (Exp a, Exp a, Exp a) -> Exp a
     f (a, _, _) = a
    in
-    stencil f wrap headFlags
+    stencil f (function $ const True_)  headFlags
 
 segmentedScanl1 :: Elt a => (Exp a -> Exp a -> Exp a) -> Acc (Vector Bool) -> Acc (Vector a) -> Acc (Vector a)
 segmentedScanl1 func headers =
