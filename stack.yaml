@@ -31,10 +31,10 @@ extra-deps:
 
 # Override default flag values for local packages and extra-deps
 flags:
-  accelerate:
-    debug: true       # get information about what code is generated and executed, etc.
+  # accelerate:
+  #   debug: true       # get information about what code is generated and executed, etc.
   quickhull:
-    llvm-cpu: true    # set to 'true' to generate parallel CPU code
+    llvm-cpu: false    # set to 'true' to generate parallel CPU code
     llvm-ptx: false   # set to 'true' to generate code for NVIDIA GPUs
 
 # Extra per-package and global ghc options. This shouldn't be required...

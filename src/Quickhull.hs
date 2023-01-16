@@ -22,13 +22,11 @@ module Quickhull (
   segmentedScanr1,
 ) where
 
-import Control.Applicative
-import qualified Control.Applicative as R
 import Data.Array.Accelerate
-import Data.Array.Accelerate.Data.Bits
-import Data.Array.Accelerate.Debug.Trace
+import Data.Array.Accelerate.Interpreter (run)
 import Data.Array.Accelerate.Smart
-import OuterPoints (leftMost, rightMost)
+import Data.Array.Accelerate.Sugar.Array (Array (Array))
+import Debug.Trace
 import qualified Prelude as P
 
 -- Points and lines in two-dimensional space
@@ -66,62 +64,73 @@ initialPartition :: Acc (Vector Point) -> Acc SegmentedPoints
 initialPartition points =
   let
     p1, p2 :: Exp Point
-    p1 = error "TODO: locate the left-most point"
-    p2 = error "TODO: locate the right-most point"
+    p1 = the (fold1 min points)
+    p2 = the (fold1 max points)
 
     isUpper :: Acc (Vector Bool)
-    isUpper = error "TODO: determine which points lie above the line (p₁, p₂)"
+    isUpper = map (pointIsLeftOfLine (T2 p1 p2)) points
 
     isLower :: Acc (Vector Bool)
-    isLower = error "TODO: determine which points lie below the line (p₁, p₂)"
+    isLower = map (pointIsLeftOfLine (T2 p2 p1)) points
 
     offsetUpper :: Acc (Vector Int)
     countUpper :: Acc (Scalar Int)
-    T2 offsetUpper countUpper = error "TODO: number of points above the line and their relative index"
+    T2 offsetUpper countUpper = compact isUpper (enumFromN (shape points) 0)
 
     offsetLower :: Acc (Vector Int)
     countLower :: Acc (Scalar Int)
-    T2 offsetLower countLower = error "TODO: number of points below the line and their relative index"
+    T2 offsetLower countLower = compact isLower (enumFromN (shape points) 0)
 
     destination :: Acc (Vector (Maybe DIM1))
-    destination = error "TODO: compute the index in the result array for each point (if it is present)"
+    destination =
+      let
+        -- an empty vector of indices
+        empty :: Acc (Vector (Maybe DIM1))
+        empty = fill (I1 (length points)) Nothing_
+
+        -- scatter the points into the empty vector according to `fn`
+
+        scatterPoints :: Acc (Scalar Int) -> Exp Int -> Acc (Vector (Maybe DIM1))
+        scatterPoints count offset =
+          generate (I1 (the count))
+          (\(I1 ix) -> Just_ (I1 (ix + offset)))
+
+        uppers, lowers :: Acc (Vector (Maybe DIM1))
+        uppers = scatterPoints countUpper 1
+        lowers = scatterPoints countLower (2 + the countUpper)
+       in
+        scatter
+          offsetLower
+          (scatter offsetUpper empty uppers)
+          lowers
 
     newPoints :: Acc (Vector Point)
-    newPoints = error "TODO: place each point into its corresponding segment of the result"
+    newPoints =
+      let
+        p1p2 :: Acc (Vector Point)
+        p1p2 = generate (I1 (3 + the countLower + the countUpper)) (\(I1 ix) -> if ix == 0 || ix == (2 + the countLower + the countUpper) then p1 else if ix == (the countUpper + 1) then p2 else undef)
+       in
+        permute const p1p2 (destination !) points
 
     headFlags :: Acc (Vector Bool)
-    headFlags = error "TODO: create head flags array demarcating the initial segments"
+    headFlags = generate (I1 (3 + the countLower + the countUpper)) (\(I1 ix) -> if ix == 0 || ix == (2 + the countLower + the countUpper) || ix == (the countUpper + 1) then True_ else False_)
+
    in
     T2 headFlags newPoints
 
--- The core of the algorithm processes all line segments at once in
--- data-parallel. This is similar to the previous partitioning step, except
--- now we are processing many segments at once.
---
--- For each line segment (p₁,p₂) locate the point furthest from that line
--- p₃. This point is on the convex hull. Then determine whether each point
--- p in that segment lies to the left of (p₁,p₃) or the right of (p₂,p₃).
--- These points are undecided.
---
 partition :: Acc SegmentedPoints -> Acc SegmentedPoints
 partition (T2 headFlags points) =
-  error "TODO: partition"
+  T2 headFlags points
 
--- The completed algorithm repeatedly partitions the points until there are
--- no undecided points remaining. What remains is the convex hull.
---
 quickhull :: Acc (Vector Point) -> Acc (Vector Point)
 quickhull =
   error "TODO: quickhull"
-
--- Helper functions
--- ----------------
 
 propagateL :: Elt a => Acc (Vector Bool) -> Acc (Vector a) -> Acc (Vector a)
 propagateL = segmentedScanl1 const
 
 propagateR :: Elt a => Acc (Vector Bool) -> Acc (Vector a) -> Acc (Vector a)
-propagateR = segmentedScanr1 (\ _ x -> x)
+propagateR = segmentedScanr1 (\_ x -> x)
 
 shiftHeadFlagsL :: Acc (Vector Bool) -> Acc (Vector Bool)
 shiftHeadFlagsL headFlags =
@@ -160,9 +169,6 @@ segmentedScanr1 func headers =
     T2
       bF
       (bF /= 0 ? (bV, f bV aV))
-
--- Given utility functions
--- -----------------------
 
 pointIsLeftOfLine :: Exp Line -> Exp Point -> Exp Bool
 pointIsLeftOfLine (T2 (T2 x1 y1) (T2 x2 y2)) (T2 x y) = nx * x + ny * y > c

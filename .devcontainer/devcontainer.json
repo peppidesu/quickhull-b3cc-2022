@@ -36,12 +36,12 @@
 
     // "postCreateCommand": "sudo chown -R vscode:vscode /home/vscode",
 
-    // "containerEnv": {
-    //   // Configure WSLg display
-    //   "DISPLAY": ":0",
-    //   "WAYLAND_DISPLAY": "${localEnv:WAYLAND_DISPLAY}",
-    //   "XDG_RUNTIME_DIR": "${localEnv:XDG_RUNTIME_DIR}",
-    //   "PULSE_SERVER": "${localEnv:PULSE_SERVER}"
-    // }
+    "containerEnv": {
+      // Configure WSLg display
+      // "DISPLAY": ":0",
+      // "WAYLAND_DISPLAY": "${localEnv:WAYLAND_DISPLAY}",
+      // "XDG_RUNTIME_DIR": "${localEnv:XDG_RUNTIME_DIR}",
+      // "PULSE_SERVER": "${localEnv:PULSE_SERVER}"
+    }
 }
 
