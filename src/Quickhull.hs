@@ -140,7 +140,7 @@ propagateL :: Elt a => Acc (Vector Bool) -> Acc (Vector a) -> Acc (Vector a)
 propagateL = segmentedScanl1 const
 
 propagateR :: Elt a => Acc (Vector Bool) -> Acc (Vector a) -> Acc (Vector a)
-propagateR = segmentedScanr1 (\_ x -> x)
+propagateR = segmentedScanr1 const
 
 shiftHeadFlagsL :: Acc (Vector Bool) -> Acc (Vector Bool)
 shiftHeadFlagsL headFlags =
@@ -161,24 +161,14 @@ shiftHeadFlagsR headFlags =
 segmentedScanl1 :: Elt a => (Exp a -> Exp a -> Exp a) -> Acc (Vector Bool) -> Acc (Vector a) -> Acc (Vector a)
 segmentedScanl1 func headers =
   map snd
-    . scanl1 (segmentedL func)
-    . zip (map boolToInt headers)
- where
-  segmentedL f (T2 _ aV) (T2 bF bV) =
-    T2
-      bF
-      (bF /= 0 ? (bV, f aV bV))
+    . scanl1 (segmented func)
+    . zip headers
 
 segmentedScanr1 :: Elt a => (Exp a -> Exp a -> Exp a) -> Acc (Vector Bool) -> Acc (Vector a) -> Acc (Vector a)
 segmentedScanr1 func headers =
   map snd
-    . scanr1 (segmentedR func)
-    . zip (map boolToInt headers)
- where
-  segmentedR f (T2 bF bV) (T2 _ aV) =
-    T2
-      bF
-      (bF /= 0 ? (bV, f bV aV))
+    . scanr1 (flip (segmented func))
+    . zip headers
 
 pointIsLeftOfLine :: Exp Line -> Exp Point -> Exp Bool
 pointIsLeftOfLine (T2 (T2 x1 y1) (T2 x2 y2)) (T2 x y) = nx * x + ny * y > c
