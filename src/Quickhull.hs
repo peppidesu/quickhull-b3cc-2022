@@ -117,8 +117,14 @@ initialPartition points =
         permute const p1p2 (destination !) points
 
     headFlags :: Acc (Vector Bool)
-    headFlags = generate (I1 (3 + the countLower + the countUpper)) (\(I1 ix) -> if ix == 0 || ix == (2 + the countLower + the countUpper) || ix == (the countUpper + 1) then True_ else False_)
-
+    headFlags = generate (I1 (3 + the countLower + the countUpper)) 
+      (\(I1 ix) -> 
+        if ix == 0 
+        || ix == (2 + the countLower + the countUpper) 
+        || ix == (the countUpper + 1) 
+          then True_ 
+          else False_
+      )
    in
     T2 headFlags newPoints
 
