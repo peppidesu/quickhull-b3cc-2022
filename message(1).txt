@@ -1,0 +1,154 @@
+:set -XBlockArguments
+:set -XFlexibleContexts
+:set -XLambdaCase
+:set -XOverloadedStrings
+:set -XRebindableSyntax
+
+import Prelude ()
+import Data.Array.Accelerate as A
+import Data.Array.Accelerate.Smart
+
+-- after initialPartition
+headFlags1 = use $ fromList (Z :. 9) [True,False,False,False,True,False,False,False,True]
+points1 = use $ fromList (Z :. 9) [(-3,0),(0,3),(-2,2),(2,2),(3,0),(0,-3),(-2,-2),(2,-2),(-3,0)]
+-- after 1 partition
+headFlags2 = use $ fromList (Z :. 9) [True,False,True,False,True,False,True,False,True]
+points2 = use $ fromList (Z :. 9) [(-3,0),(-2,2),(0,3),(2,2),(3,0),(2,-2),(0,-3),(-2,-2),(-3,0)]
+
+headFlags3 = use $ fromList (Z :. 41) [True,False,False,False,False,False,False,True,False,False,False,False,False,False,False,False,False,False,False,False,False,False,False,False,False,False,False,False,False,False,False,False,False,False,False,False,False,False,False,False,True]
+points3 = use $ fromList (Z :. 41) [(0,17),(3,17),(0,18),(12,19),(3,18),(7,18),(14,17),(19,15),(14,13),(15,3),(11,10),(7,4),(2,9),(7,14),(9,3),(3,12),(1,9),(13,12),(8,10),(15,2),(17,0),(4,15),(2,7),(17,9),(1,6),(3,2),(7,6),(2,13),(13,5),(19,5),(8,2),(19,4),(11,14),(7,10),(19,12),(3,6),(12,7),(2,5),(2,12),(19,14),(0,17)]
+
+headFlags = headFlags3
+points = points3
+
+:{
+    p1s, p2s :: Acc (Vector Point)
+    p1s = propagateL headFlags points
+    p2s = propagateR headFlags points
+:}
+
+:{
+    lines :: Acc (Vector Line)
+    lines = zip p1s p2s
+:}
+
+:{
+    dsts :: Acc (Vector Int)
+    dsts = zipWith nonNormalizedDistance lines points
+:}
+
+:{
+    furthestOf2 :: Exp (Point, Int) -> Exp (Point, Int) -> Exp (Point, Int)
+    furthestOf2 pointA@(T2 _ dstA) pointB@(T2 _ dstB) = if dstB < dstA then pointA else pointB
+:}
+
+:{
+    p3s :: Acc (Vector Point)
+    p3s = map fst $ segmentedFoldr furthestOf2 headFlags (zip points dsts)
+:}
+
+:{
+    linesLeft, linesRight :: Acc (Vector Line)
+    linesLeft = zip p1s p3s
+    linesRight = zip p3s p2s
+:}
+
+:{
+    isLeftOfTri, isRightOfTri :: Acc (Vector Bool)
+    isLeftOfTri = zipWith pointIsLeftOfLine linesLeft points
+    isRightOfTri = zipWith pointIsLeftOfLine linesRight points
+
+    isP3 = zipWith (\hf o -> if hf then False_ else o) headFlags (zipWith (==) points p3s)
+:}
+
+:{
+
+    -- absolute index of the start of the current segment
+    segmentStart :: Acc (Vector Int)
+    segmentStart = afst $ compact headFlags $ enumFromN (shape points) 0
+
+    segmentIndices :: Acc (Vector Int)
+    segmentIndices = map (\x -> x-1) $ scanl1 (+) (map boolToInt headFlags)
+
+    indices :: Acc (Vector (Int, Int))
+    indices = zip segmentIndices (enumFromN (shape points) 0)
+
+    idxsLeftOfTri, idxsRightOfTri :: Acc (Vector (Int, Int))
+    idxsLeftOfTri = afst $ compact isLeftOfTri indices
+    idxsRightOfTri = afst $ compact isRightOfTri indices
+
+    idxsP3 = afst $ compact isP3 indices
+:}
+
+:{
+    empty :: Acc (Vector (Maybe DIM1))
+    empty = fill (shape points) Nothing_
+
+    (segIdxLeft, idxsLeft) = unzip idxsLeftOfTri
+    (segIdxRight, idxsRight) = unzip idxsRightOfTri
+    (segIdxp3, idxsP) = unzip idxsP3
+
+    segStartLeft = map ((segmentStart !) . I1) segIdxLeft
+    segStartRight = map ((segmentStart !) . I1) segIdxRight
+    segStartp3 = map ((segmentStart !) . I1) segIdxp3
+
+:}
+
+:{
+    relativeIndicesLeft :: Acc (Vector Int)
+    relativeIndicesLeft =
+      segmentedScanl1 (+) (seqDiffs segStartLeft) (fill (shape segStartLeft) 1)
+:}
+
+:{
+    pointCountLeft :: Acc (Vector Int)
+    pointCountLeft = tail $ afst $ compact (shiftHeadFlagsR headFlags) (segmentedScanr1 (+) headFlags (map boolToInt isLeftOfTri))
+:}
+
+:{
+    relativeIndicesRight :: Acc (Vector Int)
+    relativeIndicesRight =
+      segmentedScanl1 (+) (seqDiffs segStartRight) (fill (shape segStartRight) 1)
+:}
+
+:{
+    relativeIndicesP =
+      segmentedScanl1 (+) (seqDiffs segStartp3) (fill (shape segStartp3) 1)
+:}
+
+:{
+    finalIndexLeft = zipWith (\a i -> Just_ $ I1 $ a + (segmentStart ! I1 i)) relativeIndicesLeft segIdxLeft
+    finalIndexRight = zipWith (\a i -> Just_ $ I1 $ a + (segmentStart ! I1 i) + (pointCountLeft ! I1 i) + 1) relativeIndicesRight segIdxRight
+:}
+
+:{
+    p3FinalIndex = zipWith (\a i -> Just_ $ I1 $ a + (segmentStart ! I1 i) + (pointCountLeft ! I1 i)) relativeIndicesP segIdxp3
+    p3Scatter = scatter idxsP empty p3FinalIndex
+:}
+
+:{
+    destination :: Acc (Vector (Maybe DIM1))
+    destination = scatter
+        idxsRight
+        (scatter idxsLeft empty finalIndexLeft)
+        finalIndexRight
+:}
+
+:{
+    hull :: Acc (Vector (Maybe Point))
+    hull = zipWith (\p f -> if f then Just_ p else Nothing_) points headFlags
+    newHull :: Acc (Vector (Maybe Point))
+    newHull = permute const hull (p3Scatter !) (map Just_ p3s)
+    newPoints :: Acc (Vector (Maybe Point))
+    newPoints =
+        permute const newHull (destination !) (map Just_ points)
+:}
+
+:{
+    newHeadFlags :: Acc (Vector Bool)
+    newHeadFlags = permute const headFlags (p3Scatter !) (fill (shape p3s) True_)
+:}
+
+:{
+    part = compactMaybe2 (T2 newPoints newHeadFlags)
+:}

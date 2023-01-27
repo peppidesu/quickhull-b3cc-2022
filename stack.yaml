@@ -34,12 +34,12 @@ flags:
   # accelerate:
   #   debug: true       # get information about what code is generated and executed, etc.
   quickhull:
-    llvm-cpu: false    # set to 'true' to generate parallel CPU code
+    llvm-cpu: true    # set to 'true' to generate parallel CPU code
     llvm-ptx: false   # set to 'true' to generate code for NVIDIA GPUs
 
 # Extra per-package and global ghc options. This shouldn't be required...
 ghc-options:
-  llvm-hs: -optcxx=-std=c++14 -optcxx=-lstdc++ -optcxx=-fno-rtti
+  llvm-hs: -optcxx=-std=c++14 -optcxx=-lstdc++ -optcxx=-frtti
 
 # Extra package databases containing global packages
 # extra-package-dbs: []
