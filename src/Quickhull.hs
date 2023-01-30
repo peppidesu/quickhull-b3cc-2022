@@ -1,8 +1,9 @@
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RebindableSyntax #-}
-{-# OPTIONS_GHC -Wno-unused-imports #-} -- see line 28
+{-# LANGUAGE TypeOperators #-}
 
 module Quickhull (
   Point,
@@ -22,10 +23,13 @@ module Quickhull (
 ) where
 
 import Data.Array.Accelerate
+import Data.Array.Accelerate.Interpreter (run)
 import Data.Array.Accelerate.Smart
+import Data.List (head)
+import Debug.Trace
+import qualified Prelude as P
 import qualified Utils as U
 import Data.Array.Accelerate.Data.Maybe (fromJust, isJust)
-import qualified Prelude as P -- hide ambiguous functions
 
 -- Points and lines in two-dimensional space
 --
@@ -81,17 +85,14 @@ initialPartition points =
         empty :: Acc (Vector (Maybe DIM1))
         empty = fill (shape points) Nothing_
 
-        -- generate sequence starting from an offset
         newPointIndices :: Exp Int -> Exp Int -> Acc (Vector (Maybe DIM1))
         newPointIndices sh offset = map (Just_ . I1 ) $ enumFromN (I1 sh) offset
 
-        -- new upper and lower indices
         uppers, lowers :: Acc (Vector (Maybe DIM1))
         uppers = newPointIndices (the countUpper) 1
         lowers = newPointIndices (the countLower) (2 + the countUpper)
 
        in
-        -- scatter both into empty vector
         scatter
           offsetLower
           (scatter offsetUpper empty uppers)
@@ -100,7 +101,10 @@ initialPartition points =
     newPoints :: Acc (Vector Point)
     newPoints =
       let
-        -- populate p1 and p2 into vector (hardcoded): [p1, ..., p2, ..., p1]
+        offset1 = the countUpper + 1
+        offset2 = offset1 + the countLower + 1
+        totalLength = offset2 + 1
+
         p1p2 :: Acc (Vector Point)
         p1p2 = 
           generate
@@ -113,12 +117,10 @@ initialPartition points =
                     else undef
             )
        in
-        -- permute other points into vector
         permute const p1p2 (destination !) points
 
     headFlags :: Acc (Vector Bool)
     headFlags =
-      -- same as before, but now we set the correct headflags to True
       generate
         (I1 (3 + the countLower + the countUpper))
         ( \(I1 ix) ->
@@ -134,78 +136,71 @@ initialPartition points =
 partition :: Acc SegmentedPoints -> Acc SegmentedPoints
 partition (T2 headFlags points) =
   let
-    -- get the p1 and p2 in the hull for every segment and populate for every point
     p1s, p2s :: Acc (Vector Point)
     p1s = propagateL headFlags points
     p2s = propagateR headFlags points
 
-    -- get the distances of each point to the corresponding line segment
     distanceToLine :: Acc (Vector Int)
     distanceToLine = zipWith nonNormalizedDistance (zip p1s p2s) points
+
+    indices :: Acc (Vector Int)
+    indices = U.indices points
     
-    -- furthest of two points
     furthest :: Exp (Point, Int) -> Exp (Point, Int) -> Exp (Point, Int)
     furthest pA pB = (snd pB < snd pA) ? (pA, pB)
 
-    -- get p3 for every segment and populate for every point
     p3s :: Acc (Vector Point)
     p3s = map fst $ segFoldRepl furthest headFlags (zip points distanceToLine)
 
-    isLeftOfTri, isRightOfTri, isP3 :: Acc (Vector Bool)
-    isLeftOfTri   = zipWith pointIsLeftOfLine (zip p1s p3s) points
-    isRightOfTri  = zipWith pointIsLeftOfLine (zip p3s p2s) points
-    isP3          = zipWith3 (\hf p p3 -> not hf && p == p3) headFlags points p3s
+    isLeftOfTri, isRightOfTri :: Acc (Vector Bool)
+    isLeftOfTri = zipWith pointIsLeftOfLine (zip p1s p3s) points
+    isRightOfTri = zipWith pointIsLeftOfLine (zip p3s p2s) points
 
-    -- index of the start of every segment
+    isP3 = zipWith3 (\hf p p3 -> not hf && p == p3) headFlags points p3s
+
+    -- absolute index of the start of the current segment
     segmentStart :: Acc (Vector Int)
-    segmentStart = afst $ compact headFlags (U.indices points)
+    segmentStart = afst $ compact headFlags indices
 
-    -- index of the current segment for every point
     segmentIndices :: Acc (Vector Int)
     segmentIndices = map (\x -> x - 1) $ scanl1 (+) (map boolToInt headFlags)
     
-    -- indices of points that are left/right of the triangle / are P3
     idxsLeftOfTri, idxsRightOfTri, idxsP3 :: Acc (Vector Int)
-    idxsLeftOfTri     = afst $ compact isLeftOfTri (U.indices points)
-    idxsRightOfTri    = afst $ compact isRightOfTri (U.indices points)
-    idxsP3            = afst $ compact isP3 (U.indices points)
+    idxsLeftOfTri     = afst $ compact isLeftOfTri indices
+    idxsRightOfTri    = afst $ compact isRightOfTri indices
+    idxsP3            = afst $ compact isP3 indices
 
-    -- idem for segment indices
     segIdxsLeftOfTri, segIdxsRightOfTri, segIdxsP3 :: Acc (Vector Int)
     segIdxsLeftOfTri  = afst $ compact isLeftOfTri segmentIndices
     segIdxsRightOfTri = afst $ compact isRightOfTri segmentIndices
     segIdxsP3         = afst $ compact isP3 segmentIndices
 
-    -- empty vector
     empty :: Acc (Vector (Maybe DIM1))
     empty = fill (shape points) Nothing_
 
-    -- get indices of the lists with respect to the start of the segments
-    -- (this one is really hard to explain without a good visual example)
     relativeIndicesLeft, relativeIndicesRight, relativeIndicesP :: Acc (Vector Int)
     relativeIndicesLeft   = segmentRelativeIndices (diffDetect segIdxsLeftOfTri)
     relativeIndicesRight  = segmentRelativeIndices (diffDetect segIdxsRightOfTri)
     relativeIndicesP      = segmentRelativeIndices (diffDetect segIdxsP3)
     
-    -- how many points are left of the triangle
     countLeftOfTri :: Acc (Vector Int)
-    countLeftOfTri = init $ afst $ segFoldCompact (+) headFlags (map boolToInt isLeftOfTri)    
-
+    countLeftOfTri = init $ afst $ segFoldCompact (+) headFlags (map boolToInt isLeftOfTri)
+    
     finalIndexLeft  = map (Just_ . I1) 
-                    $ zipWith
-                        (\a i -> a + (segmentStart !! i)) 
+                    $ zipWith 
+                        (\a i -> a + (segmentStart ! I1 i)) 
                         relativeIndicesLeft 
                         segIdxsLeftOfTri
 
     finalIndexRight = map (Just_ . I1) 
                     $ zipWith 
-                        (\a i -> a + (segmentStart !! i) + (countLeftOfTri !! i) + 1) 
+                        (\a i -> a + (segmentStart ! I1 i) + (countLeftOfTri ! I1 i) + 1) 
                         relativeIndicesRight 
                         segIdxsRightOfTri
 
     p3FinalIndex    = map (Just_ . I1) 
                     $ zipWith 
-                        (\a i -> a + (segmentStart !! i) + (countLeftOfTri !! i)) 
+                        (\a i -> a + (segmentStart ! I1 i) + (countLeftOfTri ! I1 i)) 
                         relativeIndicesP 
                         segIdxsP3
                         
