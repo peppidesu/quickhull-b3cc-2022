@@ -4,7 +4,7 @@
 Name: Noa Aarts and Pepijn Bakker<br>
 Student Number: 6716776 & 2024713 
 
-http://www.ics.uu.nl/docs/vakken/b3cc/assignments.html
+http://ics.uu.nl/docs/vakken/b3cc/assignments.html
 
 
 ## Setup: ghcup
